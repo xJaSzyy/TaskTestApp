@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using TaskTestApp;
 using TaskTestApp.Contexts;
+using TaskTestApp.Interfaces;
 using TaskTestApp.Models;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -7,7 +9,17 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("PostgreSqlConnection")));
 
+builder.Services.AddScoped<ITaskEventPublisher, RabbitMqTaskEventPublisher>();
+
 var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+{
+    var dbContext = scope.ServiceProvider
+        .GetRequiredService<ApplicationDbContext>();
+
+    await dbContext.Database.MigrateAsync();
+}
 
 app.MapPost("/tasks", async (TaskAddModel addModel, ApplicationDbContext db) =>
 {
@@ -25,7 +37,7 @@ app.MapPost("/tasks", async (TaskAddModel addModel, ApplicationDbContext db) =>
     {
         Title = addModel.Title,
         IsCompleted = addModel.IsCompleted,
-        CreatedAt = addModel.CreatedAt,
+        CreatedAt = addModel.CreatedAt ?? DateTimeOffset.UtcNow,
         CompletedAt = addModel.CompletedAt,
         Priority = addModel.Priority
     };
@@ -43,7 +55,7 @@ app.MapGet("/tasks", async (ApplicationDbContext db) =>
     return Results.Ok(tasks);
 });
 
-app.MapPut("/tasks/{id:guid}/complete", async (Guid id, ApplicationDbContext db) =>
+app.MapPut("/tasks/{id:guid}/complete", async (Guid id, ApplicationDbContext db, ITaskEventPublisher publisher) =>
 {
     var task = await db.TaskItems.FindAsync(id);
 
@@ -67,6 +79,14 @@ app.MapPut("/tasks/{id:guid}/complete", async (Guid id, ApplicationDbContext db)
     task.CompletedAt = DateTimeOffset.UtcNow;
 
     await db.SaveChangesAsync();
+    
+    var message = new TaskCompletedEvent(
+        TaskId: task.Id,
+        Title: task.Title,
+        CompletedAt: task.CompletedAt.Value,
+        Priority: task.Priority.ToString());
+
+    await publisher.PublishCompletedAsync(message);
 
     return Results.Ok(task);
 });
