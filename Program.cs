@@ -1,15 +1,22 @@
 using Microsoft.EntityFrameworkCore;
-using TaskTestApp;
 using TaskTestApp.Contexts;
 using TaskTestApp.Interfaces;
 using TaskTestApp.Models;
+using TaskTestApp.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("PostgreSqlConnection")));
 
-builder.Services.AddScoped<ITaskEventPublisher, RabbitMqTaskEventPublisher>();
+builder.Services.AddSingleton<TaskEventQueue>();
+builder.Services.AddSingleton<ITaskEventPublisher, QueuedTaskEventPublisher>();
+builder.Services.AddHostedService<RabbitMqPublisherWorker>();
+
+builder.Host.ConfigureHostOptions(options =>
+{
+    options.ShutdownTimeout = TimeSpan.FromSeconds(10);
+});
 
 var app = builder.Build();
 
