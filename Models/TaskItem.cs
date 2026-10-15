@@ -10,4 +10,5 @@ public class TaskItem
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }
     public Priority Priority { get; set; }
+    public uint Version { get; set; }
 }

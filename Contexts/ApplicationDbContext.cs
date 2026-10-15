@@ -17,5 +17,8 @@ public class ApplicationDbContext : DbContext
     
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<TaskItem>()
+            .Property(t => t.Version)
+            .IsRowVersion();
     }
 }

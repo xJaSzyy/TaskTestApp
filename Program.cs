@@ -55,7 +55,7 @@ app.MapGet("/tasks", async (ApplicationDbContext db) =>
     return Results.Ok(tasks);
 });
 
-app.MapPut("/tasks/{id:guid}/complete", async (Guid id, ApplicationDbContext db, ITaskEventPublisher publisher) =>
+app.MapPut("/tasks/{id:guid}/complete", async (Guid id, ApplicationDbContext db, ITaskEventPublisher publisher, ILogger<Program> logger) =>
 {
     var task = await db.TaskItems.FindAsync(id);
 
@@ -78,8 +78,20 @@ app.MapPut("/tasks/{id:guid}/complete", async (Guid id, ApplicationDbContext db,
     task.IsCompleted = true;
     task.CompletedAt = DateTimeOffset.UtcNow;
 
-    await db.SaveChangesAsync();
-    
+    try
+    {
+        await db.SaveChangesAsync();
+    }
+    catch (DbUpdateConcurrencyException)
+    {
+        logger.LogInformation("Concurrent completion detected for task {TaskId}", id);
+
+        return Results.Conflict(new
+        {
+            Error = "Task was modified by another request"
+        });
+    }
+
     var message = new TaskCompletedEvent(
         TaskId: task.Id,
         Title: task.Title,
